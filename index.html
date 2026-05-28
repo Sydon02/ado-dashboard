@@ -315,6 +315,11 @@ async function storageGet(k){ try{ const r=await window.storage.get(k); return r
 async function storageSet(k,v){ try{ await window.storage.set(k,v); }catch(e){} }
 async function storageDel(k){ try{ await window.storage.delete(k); }catch(e){} }
 
+// localStorage helpers — used only for PAT remember-me (survives refresh/close)
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+
 async function loadStorage(){
   const [ir,sr,or_,mr,cr] = await Promise.all([
     storageGet("t2e_items"),storageGet("t2e_sync"),storageGet("t2e_overrides"),
@@ -325,8 +330,8 @@ async function loadStorage(){
   if(or_) G.overrides=JSON.parse(or_);
   if(mr) G.meetings=JSON.parse(mr);
   if(cr) G.adoCfg=JSON.parse(cr);
-  const rr = await storageGet("t2e_remember_pat");
-  if(rr === "1"){ G.rememberPat=true; const pr=await storageGet("t2e_pat"); if(pr) G.adoCfg.pat=pr; }
+  const rr = lsGet("t2e_remember_pat");
+  if(rr === "1"){ G.rememberPat=true; const pr=lsGet("t2e_pat"); if(pr) G.adoCfg.pat=pr; }
 }
 
 async function saveOverrides(){
@@ -1434,11 +1439,11 @@ async function doConnect(){
   G.adoCfg={orgUrl:org,project:proj,pat,epicId:epic};
   G.rememberPat = remember;
   if(remember){
-    await storageSet('t2e_remember_pat','1');
-    await storageSet('t2e_pat', pat);
+    lsSet('t2e_remember_pat','1');
+    lsSet('t2e_pat', pat);
   } else {
-    await storageDel('t2e_remember_pat');
-    await storageDel('t2e_pat');
+    lsDel('t2e_remember_pat');
+    lsDel('t2e_pat');
   }
   await doSync();
 }
@@ -1493,7 +1498,7 @@ async function doDisconnect(){
   G.connected=false; G.items=[]; G.lastSync=null; G.syncError=null;
   G.adoCfg={orgUrl:'https://dev.azure.com/SmartQ-Global-Digital-Cafeteria-Suite',project:'Gartner - SQ Transformation',pat:'',epicId:5276};
   G.rememberPat=false;
-  await storageDel('t2e_remember_pat'); await storageDel('t2e_pat');
+  lsDel('t2e_remember_pat'); lsDel('t2e_pat');
   await storageDel('t2e_items'); await storageDel('t2e_sync'); await storageDel('t2e_ado_cfg');
   render();
 }
@@ -1534,7 +1539,14 @@ function render(){
   await loadStorage();
   // If we restored items from storage, rebuild WS meta from them
   if(G.items.length) rebuildWsMeta(G.items);
-  // Start on sync tab if not connected, overview if already have data
+  // Auto-reconnect if rememberPat is set and we have credentials
+  const {orgUrl, project, pat} = G.adoCfg;
+  if(!G.connected && G.rememberPat && orgUrl && project && pat){
+    G.tab = 'overview';
+    render(); // show overview with loading state immediately
+    await doSync();
+    return;
+  }
   if(!G.connected) G.tab='sync';
   render();
 })();
