@@ -166,9 +166,27 @@ tr:hover td{background:var(--surface2)}
 .filter-bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:7px 0 9px;border-bottom:1px solid var(--border);margin-bottom:8px}
 
 @media(max-width:1100px){.metric-grid,.ws-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
+
+/* ── ITEM TOOLTIP ── */
+#iid-tooltip{
+  position:fixed;z-index:9999;pointer-events:none;
+  background:#1e293b;color:#f1f5f9;
+  border-radius:8px;padding:10px 13px;
+  font-size:11px;line-height:1.7;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);
+  max-width:280px;white-space:nowrap;
+  opacity:0;transition:opacity .12s;
+}
+#iid-tooltip.visible{opacity:1}
+#iid-tooltip .tt-id{font-family:var(--mono);font-size:10px;color:#94a3b8;margin-bottom:4px}
+#iid-tooltip .tt-title{font-weight:600;color:#f8fafc;white-space:normal;margin-bottom:6px;line-height:1.4}
+#iid-tooltip .tt-row{display:flex;gap:6px;align-items:center}
+#iid-tooltip .tt-label{color:#64748b;min-width:56px;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+#iid-tooltip .tt-val{color:#e2e8f0}
 </style>
 </head>
 <body>
+<div id="iid-tooltip"></div>
 <div class="app">
 
 <!-- NAV -->
@@ -636,7 +654,7 @@ function itemRowHTML(it, showWS=false){
   const dtLabel = it.state==="Closed" ? fmtDate(it.target) : u==="overdue" ? `${Math.abs(d)}d overdue` : u==="thisweek" ? `Due ${fmtDate(it.target)}` : fmtDate(it.target);
   const dtCls = u==="overdue" ? "idt red" : u==="thisweek" ? "idt amb" : "idt";
   return `<div class="item-row ${u==="overdue"?"overdue":u==="thisweek"?"thisweek":""}">
-    <span class="iid">#${it.id}</span>
+    <span class="iid" style="cursor:default" onmouseenter="showIidTip(event,this)" onmouseleave="hideIidTip()" data-id="${it.id}" data-type="${it.type||'Work Item'}" data-title="${it.title.replace(/"/g,'&quot;')}" data-owner="${it.owner}" data-state="${it.state}" data-start="${it.start||'—'}" data-target="${it.target||'—'}" data-ws="${it.ws}">#${it.id}</span>
     <span class="ititle" style="padding-left:${(it.level-2)*10}px" title="${it.title}">
       ${showWS?`<span class="badge badge-gray" style="margin-right:4px;font-size:9px">${it.ws}</span>`:""}${it.title}
     </span>
@@ -688,6 +706,43 @@ window.filterAll = (k,v)=>filterChange("all",k,v);
 window.toggleWS = toggleWS;
 window.toggleStory = toggleStory;
 window.toggleWsCard = (ws)=>{ G.expandedWS["card_"+ws]=!G.expandedWS["card_"+ws]; render(); };
+
+// ── ITEM ID TOOLTIP ──
+(function(){
+  var tip = null;
+  function el(){ return tip || (tip = document.getElementById('iid-tooltip')); }
+  window.showIidTip = function(e, span){
+    var t = el(); if(!t) return;
+    var d = span.dataset;
+    t.innerHTML =
+      '<div class="tt-id">#' + d.id + ' &nbsp;·&nbsp; ' + d.type + '</div>' +
+      '<div class="tt-title">' + d.title + '</div>' +
+      '<div class="tt-row"><span class="tt-label">Owner</span><span class="tt-val">' + d.owner + '</span></div>' +
+      '<div class="tt-row"><span class="tt-label">State</span><span class="tt-val">' + d.state + '</span></div>' +
+      '<div class="tt-row"><span class="tt-label">Start</span><span class="tt-val">' + d.start + '</span></div>' +
+      '<div class="tt-row"><span class="tt-label">Target</span><span class="tt-val">' + d.target + '</span></div>' +
+      '<div class="tt-row"><span class="tt-label">WS</span><span class="tt-val">' + d.ws + '</span></div>';
+    t.classList.add('visible');
+    positionTip(e, t);
+  };
+  window.hideIidTip = function(){
+    var t = el(); if(t) t.classList.remove('visible');
+  };
+  function positionTip(e, t){
+    var x = e.clientX + 14, y = e.clientY + 14;
+    t.style.left = x + 'px'; t.style.top = y + 'px';
+    // Flip if off-screen
+    requestAnimationFrame(function(){
+      var r = t.getBoundingClientRect();
+      if(r.right > window.innerWidth - 8)  t.style.left = (e.clientX - r.width - 8) + 'px';
+      if(r.bottom > window.innerHeight - 8) t.style.top = (e.clientY - r.height - 8) + 'px';
+    });
+  }
+  document.addEventListener('mousemove', function(e){
+    var t = el();
+    if(t && t.classList.contains('visible')) positionTip(e, t);
+  });
+})();
 window.setTab = setTab;
 window.quickSync = quickSync;
 window.render = render;
