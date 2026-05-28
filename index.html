@@ -236,6 +236,7 @@ let G = {
   connected: false,
   // ADO connection config — persisted in storage
   adoCfg: { orgUrl:"https://dev.azure.com/SmartQ-Global-Digital-Cafeteria-Suite", project:"Gartner - SQ Transformation", pat:"", epicId:5276 },
+  rememberPat: false,
   tab: "overview",
   expandedWS: {},
   expandedStory: {},
@@ -324,6 +325,8 @@ async function loadStorage(){
   if(or_) G.overrides=JSON.parse(or_);
   if(mr) G.meetings=JSON.parse(mr);
   if(cr) G.adoCfg=JSON.parse(cr);
+  const rr = await storageGet("t2e_remember_pat");
+  if(rr === "1"){ G.rememberPat=true; const pr=await storageGet("t2e_pat"); if(pr) G.adoCfg.pat=pr; }
 }
 
 async function saveOverrides(){
@@ -1296,6 +1299,10 @@ function renderSync(){
         <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">Root Epic ID</label>
         <input class="inp" id="ado-epic" placeholder="5276" value="${cfg.epicId||5276}" style="width:120px">
       </div>
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px">
+        <input type="checkbox" id="ado-remember" ${G.rememberPat?"checked":""} style="accent-color:var(--blue);width:13px;height:13px;cursor:pointer">
+        <label for="ado-remember" style="font-size:12px;color:var(--text2);cursor:pointer;user-select:none">Remember PAT on this device</label>
+      </div>
       <button class="btn btn-primary" onclick="doConnect()" style="min-width:160px">
         ${G.syncing?'<span class="spin">↻</span> Connecting…':'Connect &amp; Load'}
       </button>
@@ -1422,8 +1429,17 @@ async function doConnect(){
   const proj = document.getElementById('ado-proj')?.value.trim() || '';
   const pat  = document.getElementById('ado-pat')?.value.trim()  || '';
   const epic = parseInt(document.getElementById('ado-epic')?.value||'5276',10)||5276;
+  const remember = document.getElementById('ado-remember')?.checked || false;
   if(!org||!proj||!pat){ G.syncError='Please fill in all fields.'; render(); return; }
   G.adoCfg={orgUrl:org,project:proj,pat,epicId:epic};
+  G.rememberPat = remember;
+  if(remember){
+    await storageSet('t2e_remember_pat','1');
+    await storageSet('t2e_pat', pat);
+  } else {
+    await storageDel('t2e_remember_pat');
+    await storageDel('t2e_pat');
+  }
   await doSync();
 }
 
@@ -1473,10 +1489,12 @@ async function doSync(){
   G.syncing=false; render();
 }
 
-function doDisconnect(){
+async function doDisconnect(){
   G.connected=false; G.items=[]; G.lastSync=null; G.syncError=null;
   G.adoCfg={orgUrl:'https://dev.azure.com/SmartQ-Global-Digital-Cafeteria-Suite',project:'Gartner - SQ Transformation',pat:'',epicId:5276};
-  storageDel('t2e_items'); storageDel('t2e_sync'); storageDel('t2e_ado_cfg');
+  G.rememberPat=false;
+  await storageDel('t2e_remember_pat'); await storageDel('t2e_pat');
+  await storageDel('t2e_items'); await storageDel('t2e_sync'); await storageDel('t2e_ado_cfg');
   render();
 }
 
