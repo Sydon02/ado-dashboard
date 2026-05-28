@@ -14,7 +14,7 @@ jobs:
 
       - name: Get ADO Data
         run: |
-          curl -u :${{ secrets.ADO_PAT }} "YOUR_ADO_API_URL" -o data/dashboard.json
+          curl -u :${{ secrets.ADO_PAT }} "https://dev.azure.com/SmartQ-Global-Digital-Cafeteria-Suite/" -o data/dashboard.json
 
       - name: Commit Changes
         run: |
