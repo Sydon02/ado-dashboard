@@ -1,0 +1,25 @@
+name: Update Dashboard
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get ADO Data
+        run: |
+          curl -u :${{ secrets.ADO_PAT }} "YOUR_ADO_API_URL" -o data/dashboard.json
+
+      - name: Commit Changes
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m "update data" || echo "No changes"
+          git push
