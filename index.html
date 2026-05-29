@@ -200,6 +200,7 @@ tr:hover td{background:var(--surface2)}
   <button class="nav-item" id="nv-weekly" onclick="setTab('weekly')"><span class="icon">📅</span>Weekly Call<span class="nav-badge" id="nb-weekly" style="display:none">0</span></button>
   <button class="nav-item" id="nv-actions" onclick="setTab('actions')"><span class="icon">✅</span>Action Items<span class="nav-badge amb" id="nb-actions" style="display:none">0</span></button>
   <button class="nav-item" id="nv-all" onclick="setTab('all')"><span class="icon">📋</span>All Items</button>
+  <button class="nav-item" id="nv-mytasks" onclick="setTab('mytasks')"><span class="icon">👤</span>My Tasks</button>
   <button class="nav-item" id="nv-sync" onclick="setTab('sync')"><span class="icon">🔄</span>Sync</button>
   <div class="nav-section" style="margin-top:8px">Team</div>
   <div id="nav-team"></div>
@@ -255,6 +256,7 @@ let G = {
   // ADO connection config — persisted in storage
   adoCfg: { orgUrl:"https://dev.azure.com/SmartQ-Global-Digital-Cafeteria-Suite", project:"Gartner - SQ Transformation", pat:"", epicId:5276 },
   rememberPat: false,
+  currentUser: null,
   tab: "overview",
   expandedWS: {},
   expandedStory: {},
@@ -348,6 +350,7 @@ async function loadStorage(){
   if(or_) G.overrides=JSON.parse(or_);
   if(mr) G.meetings=JSON.parse(mr);
   if(cr) G.adoCfg=JSON.parse(cr);
+  const cu = lsGet('t2e_current_user'); if(cu) G.currentUser = cu;
   const rr = lsGet("t2e_remember_pat");
   if(rr === "1"){ G.rememberPat=true; const pr=lsGet("t2e_pat"); if(pr) G.adoCfg.pat=pr; }
 }
@@ -368,9 +371,9 @@ function setTab(tab, extra){
   if(tab.startsWith("owner-")){
     const el=document.getElementById("nv-owner-"+tab.replace("owner-",""));
     if(el) el.classList.add("active");
-    ["nv-overview","nv-weekly","nv-actions","nv-all","nv-sync"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("active");});
+    ["nv-overview","nv-weekly","nv-actions","nv-all","nv-mytasks","nv-sync"].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove("active");});
   } else {
-    ["nv-overview","nv-weekly","nv-actions","nv-all","nv-sync"].forEach(id=>{
+    ["nv-overview","nv-weekly","nv-actions","nv-all","nv-mytasks","nv-sync"].forEach(id=>{
       const e=document.getElementById(id);
       if(e) e.classList.toggle("active", id==="nv-"+tab);
     });
@@ -1541,8 +1544,8 @@ async function doSync(){
     await storageSet('t2e_sync', G.lastSync);
     await storageSet('t2e_ado_cfg', JSON.stringify(G.adoCfg));
 
-    // Switch to overview after first connect
-    if(G.tab==='sync') G.tab='overview';
+    // Switch to identify (first time) or overview after connect
+    if(G.tab==='sync') G.tab = G.currentUser ? 'overview' : 'identify';
   }catch(e){
     G.syncError = e.message;
   }
@@ -1566,6 +1569,71 @@ async function confirmReset(){
 }
 window.doConnect=doConnect; window.doSync=doSync; window.doDisconnect=doDisconnect; window.confirmReset=confirmReset;
 
+// ── IDENTIFY ──
+function renderIdentify(){
+  const owners = [...new Set(G.items.map(i=>i.owner))].sort();
+  return `<div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:0">
+    <div class="card" style="max-width:420px;width:100%">
+      <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">👋 Welcome</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:18px">Select your name to personalise your view. This is saved to your device.</div>
+      <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:5px">Your Name</label>
+      <select class="inp" id="identify-select" style="cursor:pointer;margin-bottom:16px" onchange="(function(v){if(v){G.currentUser=v;lsSet('t2e_current_user',v);G.tab='mytasks';render();}})(this.value)">
+        <option value="">— Select your name —</option>
+        ${owners.map(o=>`<option value="${o}">${o}</option>`).join('')}
+      </select>
+      <button class="btn" style="font-size:11px;color:var(--text3)" onclick="G.tab='overview';render()">Skip for now</button>
+    </div>
+  </div>`;
+}
+window.setCurrentUser = function(name){ G.currentUser=name; lsSet('t2e_current_user',name); render(); };
+window.clearCurrentUser = function(){ G.currentUser=null; lsDel('t2e_current_user'); render(); };
+
+// ── MY TASKS ──
+function renderMyTasks(){
+  if(!G.currentUser){
+    return `<div class="page-header"><h2>My Tasks</h2></div>
+    <div class="card" style="max-width:420px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Not set up yet</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Disconnect and reconnect to set your name.</div>
+    </div>`;
+  }
+  const items  = effectiveItems();
+  const mine   = items.filter(i=>i.owner===G.currentUser);
+  const open   = mine.filter(i=>i.state!=="Closed").sort((a,b)=>dl(a.target)-dl(b.target));
+  const closed = mine.filter(i=>i.state==="Closed").sort((a,b)=>dl(b.target)-dl(a.target));
+  const overdue  = open.filter(i=>urgency(i)==="overdue");
+  const thisweek = open.filter(i=>urgency(i)==="thisweek");
+  const rest     = open.filter(i=>urgency(i)==="normal");
+  return `<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div><h2>My Tasks</h2><p>Items assigned to <strong>${G.currentUser}</strong></p></div>
+    <button onclick="clearCurrentUser()" style="padding:5px 10px;font-size:11px;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:6px;cursor:pointer;margin-top:4px">Switch user</button>
+  </div>
+  <div class="metric-grid" style="margin-bottom:16px">
+    <div class="metric-card"><div class="metric-val">${mine.length}</div><div class="metric-label">Total</div></div>
+    <div class="metric-card"><div class="metric-val" style="color:var(--blue-t)">${open.length}</div><div class="metric-label">Open</div></div>
+    <div class="metric-card"><div class="metric-val" style="color:var(--red-t)">${overdue.length}</div><div class="metric-label">Overdue</div></div>
+    <div class="metric-card"><div class="metric-val" style="color:var(--green-t)">${closed.length}</div><div class="metric-label">Completed</div></div>
+  </div>
+  ${overdue.length>0?`<div class="card" style="margin-bottom:12px;border-color:#fecaca">
+    <div class="section-title" style="margin-top:0;color:var(--red-t)">⚠ Overdue</div>
+    <div class="item-list">${overdue.map(it=>itemRowHTML(it,true)).join("")}</div>
+  </div>`:""}
+  ${thisweek.length>0?`<div class="card" style="margin-bottom:12px;border-color:#fde68a">
+    <div class="section-title" style="margin-top:0;color:var(--amber-t)">📅 Due This Week</div>
+    <div class="item-list">${thisweek.map(it=>itemRowHTML(it,true)).join("")}</div>
+  </div>`:""}
+  ${rest.length>0?`<div class="card" style="margin-bottom:12px">
+    <div class="section-title" style="margin-top:0">Upcoming</div>
+    <div class="item-list">${rest.map(it=>itemRowHTML(it,true)).join("")}</div>
+  </div>`:""}
+  ${closed.length>0?`<div class="card">
+    <div class="section-title" style="margin-top:0;color:var(--green-t)">✓ Completed (${closed.length})</div>
+    <div class="item-list">${closed.slice(0,20).map(it=>itemRowHTML(it,true)).join("")}</div>
+    ${closed.length>20?`<div style="font-size:11px;color:var(--text3);padding:6px 0">+ ${closed.length-20} more</div>`:""}
+  </div>`:""}
+  ${mine.length===0?`<div class="card"><div class="empty-state">No items assigned to ${G.currentUser}</div></div>`:""}`;
+}
+
 // ── MAIN RENDER ──
 function render(){
   buildNav();
@@ -1581,7 +1649,9 @@ function render(){
     </div>`;
     return;
   }
-  if(tab==="overview") mc.innerHTML = renderOverview();
+  if(tab==="identify") mc.innerHTML = renderIdentify();
+  else if(tab==="mytasks") mc.innerHTML = renderMyTasks();
+  else if(tab==="overview") mc.innerHTML = renderOverview();
   else if(tab==="weekly") mc.innerHTML = renderWeekly();
   else if(tab==="actions") mc.innerHTML = renderActions();
   else if(tab==="all") mc.innerHTML = renderAll();
@@ -1597,8 +1667,8 @@ function render(){
   // Auto-reconnect if rememberPat is set and we have credentials
   const {orgUrl, project, pat} = G.adoCfg;
   if(!G.connected && G.rememberPat && orgUrl && project && pat){
-    G.tab = 'overview';
-    render(); // show overview with loading state immediately
+    G.tab = G.currentUser ? 'overview' : 'identify';
+    render(); // show loading state immediately
     await doSync();
     return;
   }
